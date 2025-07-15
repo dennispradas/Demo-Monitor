@@ -7,7 +7,7 @@ networks:
 services:
   mt-proxy:
     image: nginx:alpine
-    container_name: ct-proxy
+    container_name: mt-proxy
     ports:
       - "9100:4000"
     volumes:
@@ -20,7 +20,7 @@ services:
   
   mt-node-exporter:
     image: prom/node-exporter:latest
-    container_name: ct-node-exporter
+    container_name: mt-node-exporter
     ports:
       - "9100"
     networks:
@@ -28,9 +28,9 @@ services:
         aliases:
           - node-exporter
 
-  cadvisor:
+  mt-cadvisor:
     image: gcr.io/cadvisor/cadvisor
-    container_name: ct-cadvisor
+    container_name: mt-cadvisor
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:rw
