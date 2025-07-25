@@ -27,6 +27,12 @@ services:
       mt-network:
         aliases:
           - node-exporter
+    command:
+      - '--path.rootfs=/host'
+    pid: host
+    restart: unless-stopped
+    volumes:
+      - '/:/host:ro,rslave'
 
   mt-cadvisor:
     image: gcr.io/cadvisor/cadvisor
