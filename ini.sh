@@ -8,6 +8,27 @@ SCRIPT_CONTENT=$(cat << 'INNERSCRIPT'
 set -e
 REPO_URL="https://github.com/dennispradas/Demo-Monitor.git"
 DEST_DIR="/src/exporter"
+
+# ─── Asegurar que git está instalado ────────────────────────────
+if ! command -v git &>/dev/null; then
+    echo ">>> git no encontrado, instalando..."
+    if command -v apt-get &>/dev/null; then
+        apt-get update -qq && apt-get install -y -qq git
+    elif command -v yum &>/dev/null; then
+        yum install -y -q git
+    elif command -v dnf &>/dev/null; then
+        dnf install -y -q git
+    elif command -v apk &>/dev/null; then
+        apk add --no-cache git
+    else
+        echo "    [ERROR] No se reconoce el gestor de paquetes. Instala git manualmente."
+        exit 1
+    fi
+    echo "    [OK] git instalado: $(git --version)"
+else
+    echo ">>> git ya disponible: $(git --version)"
+fi
+
 echo ">>> Preparando directorio $DEST_DIR..."
 rm -rf "$DEST_DIR"
 mkdir -p "$DEST_DIR"
