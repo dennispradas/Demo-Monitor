@@ -80,22 +80,23 @@ echo ""
 echo ">>> IPs recogidas: ${TARGETS[*]}"
 
 # ─── Construir bloques YAML para cada job ───────────────────────
-TARGETS_YAML_NODE=""
-TARGETS_YAML_ADVISOR=""
+TARGETS_YAML=""
 for IP in "${TARGETS[@]}"; do
-    TARGETS_YAML_NODE+="        - '${IP}:${EXPORTER_PORT}'\n"
-    TARGETS_YAML_ADVISOR+="        - '${IP}:${EXPORTER_PORT}'\n"
+    TARGETS_YAML+="        - '${IP}:${EXPORTER_PORT}'"$'\n'
 done
 
-# job node_exporter  → metrics_path: /
-NEW_JOB_NODE=$(printf \
-"  - job_name: '%s'\n    metrics_path: /\n    static_configs:\n      - targets:\n%b" \
-    "$JOB_NODE" "$TARGETS_YAML_NODE")
+NEW_JOBS="  - job_name: '${JOB_NODE}'
+    metrics_path: /
+    static_configs:
+      - targets:
+${TARGETS_YAML}  - job_name: '${JOB_ADVISOR}'
+    metrics_path: /advisor
+    static_configs:
+      - targets:
+${TARGETS_YAML}"
 
-# job cadvisor → metrics_path: /advisor
-NEW_JOB_ADVISOR=$(printf \
-"  - job_name: '%s'\n    metrics_path: /advisor\n    static_configs:\n      - targets:\n%b" \
-    "$JOB_ADVISOR" "$TARGETS_YAML_ADVISOR")
+# Codificar en base64 para evitar problemas de quoting al pasar por pct/qm exec
+NEW_JOBS_B64=$(printf '%s' "$NEW_JOBS" | base64 -w0)
 
 # ─── Aplicar en el CT/VM de Prometheus ──────────────────────────
 echo ""
@@ -115,22 +116,21 @@ run_remote() {
 run_remote "cp $PROMETHEUS_YML ${PROMETHEUS_YML}.bak.\$(date +%Y%m%d%H%M%S)"
 echo "    [OK] Backup creado"
 
-# Reemplazar/insertar ambos jobs via Python
+# Reemplazar/insertar ambos jobs via Python (bloque pasado en base64)
 run_remote "
 python3 - << 'PYEOF'
-import re
+import re, base64
 
 yml_path    = '$PROMETHEUS_YML'
 job_node    = '$JOB_NODE'
 job_advisor = '$JOB_ADVISOR'
-new_node    = '''$NEW_JOB_NODE'''
-new_advisor = '''$NEW_JOB_ADVISOR'''
+new_jobs    = base64.b64decode('$NEW_JOBS_B64').decode()
 
 with open(yml_path, 'r') as f:
     content = f.read()
 
 def remove_job(content, name):
-    pattern = r'  - job_name: [\"\']{name}[\"\'](.*?)(?=\n  - job_name:|\Z)'.format(name=re.escape(name))
+    pattern = r'[ \t]*- job_name:[ \t]*[\"\']?' + re.escape(name) + r'[\"\']?(.*?)(?=\n[ \t]*- job_name:|\Z)'
     return re.sub(pattern, '', content, flags=re.DOTALL)
 
 content = remove_job(content, job_node)
@@ -140,13 +140,20 @@ content = content.rstrip()
 if 'scrape_configs:' not in content:
     content += '\n\nscrape_configs:'
 
-content = content + '\n' + new_node + '\n' + new_advisor + '\n'
+content = content + '\n' + new_jobs + '\n'
 
 with open(yml_path, 'w') as f:
     f.write(content)
 
 print('    [OK] prometheus.yml actualizado con ambos jobs')
 PYEOF
+"
+
+# Validar la config antes de recargar (si promtool existe)
+run_remote "
+if command -v promtool &>/dev/null; then
+    promtool check config $PROMETHEUS_YML && echo '    [OK] Config validada por promtool' || { echo '    [ERROR] Config inválida, revisa el yml'; exit 1; }
+fi
 "
 
 # Recargar Prometheus sin downtime
@@ -163,7 +170,7 @@ fi
 echo ""
 echo "══════════════════════════════════════════════════════"
 echo " Jobs configurados:"
-echo "   [$JOB_NODE]  → :$EXPORTER_PORT/"
+echo "   [$JOB_NODE]   → :$EXPORTER_PORT/"
 echo "   [$JOB_ADVISOR] → :$EXPORTER_PORT/advisor"
 echo ""
 echo " Targets:"
